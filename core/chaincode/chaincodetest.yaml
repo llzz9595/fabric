@@ -378,21 +378,21 @@ ledger:
     # stateDatabase - options are "goleveldb", "CouchDB"
     # goleveldb - default state database stored in goleveldb.
     # CouchDB - store state database in CouchDB
-    stateDatabase: goleveldb
-    couchDBConfig:
-       couchDBAddress: 127.0.0.1:5984
-       username:
-       password:
+    stateDatabase: MongoDB
+  #  couchDBConfig:
+  #    couchDBAddress: 127.0.0.1:5984
+  #     username:
+  #     password:
        # Number of retries for CouchDB errors
-       maxRetries: 3
+  #     maxRetries: 3
        # Number of retries for CouchDB errors during peer startup
-       maxRetriesOnStartup: 10
+#    maxRetriesOnStartup: 10
        # CouchDB request timeout (unit: duration, e.g. 20s)
-       requestTimeout: 35s
+ #      requestTimeout: 35s
        # Limit on the number of records to return per query
-       queryLimit: 10000
+  #     queryLimit: 10000
        # Limit on the number of records per CouchDB bulk update batch
-       maxBatchUpdateSize: 500
+  #     maxBatchUpdateSize: 500
        # Warm indexes after every N blocks.
        # This option warms any indexes that have been
        # deployed to CouchDB after every N blocks.
@@ -400,7 +400,24 @@ ledger:
        # to ensure fast selector queries.
        # Increasing the value may improve write efficiency of peer and CouchDB,
        # but may degrade query response time.
-       warmIndexesAfterNBlocks: 1
+   #    warmIndexesAfterNBlocks: 1
+    mongoDBConfig:
+       # The variable can be covered on environment
+       # Default connection Url of MongoDB
+       url: mongodb://127.0.0.1:27017
+       # This username must have read and write authority on MongoDB
+       username: admin
+       # The password is recommended to pass as an environment variable
+       # during start up (eg CORE_LEDGER_STATE_MONGODBCONFIG_PASSWORD).
+       # If it is stored here, the file must be access control protected
+       # to prevent unintended users from discovering the password.
+       password: 123456
+       # The default collectionName for MongoDB.
+       collectionName: test
+       # MongoDB request timeout.
+       requestTime: 35s
+       # Limit on the number of records to return per query
+       queryLimit: 10000   
 
   history:
     # enableHistoryDatabase - options are true or false
