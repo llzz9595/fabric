@@ -1,0 +1,15 @@
+FROM _BASE_NS_/fabric-baseimage:_BASE_TAG_
+
+COPY payload/install.sh /tmp/
+RUN bash /tmp/install.sh \
+	rm -f /tmp/install.sh
+
+COPY payload/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+VOLUME /data/db /data/configdb
+
+RUN ln -s usr/local/bin/docker-entrypoint.sh /entrypoint.sh # backwards compat
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+EXPOSE 27017
+CMD ["mongod"]
