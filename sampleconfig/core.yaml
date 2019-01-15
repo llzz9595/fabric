@@ -600,24 +600,6 @@ ledger:
        # This is optional.  Creating the global changes database will require
        # additional system resources to track changes and maintain the database
        createGlobalChangesDB: false
-    
-    mongoDBConfig:
-       # The variable can be covered on environment
-       # Default connection Url of MongoDB
-       url: mongodb://127.0.0.1:27017
-       # This username must have read and write authority on MongoDB
-       username: admin
-       # The password is recommended to pass as an environment variable
-       # during start up (eg CORE_LEDGER_STATE_MONGODBCONFIG_PASSWORD).
-       # If it is stored here, the file must be access control protected
-       # to prevent unintended users from discovering the password.
-       password: 123456
-       # The default collectionName for MongoDB.
-       collectionName: test
-       # MongoDB request timeout.
-       requestTime: 35s
-       # Limit on the number of records to return per query
-       queryLimit: 10000  
 
   history:
     # enableHistoryDatabase - options are true or false
