@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+	"encoding/json"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/channelconfig"
@@ -29,6 +30,8 @@ import (
 	putils "github.com/hyperledger/fabric/protos/utils"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	//提供opentracing
+	"github.com/hyperledger/fabric/core/comm/opentrace"
 )
 
 var endorserLogger = flogging.MustGetLogger("endorser")
@@ -421,11 +424,16 @@ func (e *Endorser) preProcess(signedProp *pb.SignedProposal) (*validateResult, e
 
 // ProcessProposal process the Proposal
 func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedProposal) (*pb.ProposalResponse, error) {
+	// span methodName
+	funcName:= "背书"
+	addr := util.ExtractRemoteAddress(ctx)
+	 // span tag
+    var tag = addr
+    var log string
 	// start time for computing elapsed time metric for successfully endorsed proposals
 	startTime := time.Now()
 	e.Metrics.ProposalsReceived.Add(1)
 
-	addr := util.ExtractRemoteAddress(ctx)
 	endorserLogger.Debug("Entering: request from", addr)
 
 	// variables to capture proposal duration metric
@@ -454,7 +462,14 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 		resp := vr.resp
 		return resp, err
 	}
-
+	// span in
+	var in string 
+	jsonBytes, err := json.Marshal(vr)
+	if err != nil {
+		endorserLogger.Debugf("span in fail to become json ")
+	}else {
+		 in = string(jsonBytes)
+	}
 	prop, hdrExt, chainID, txid := vr.prop, vr.hdrExt, vr.chainID, vr.txid
 
 	// obtaining once the tx simulator for this proposal. This will be nil
@@ -464,6 +479,8 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 	var historyQueryExecutor ledger.HistoryQueryExecutor
 	if acquireTxSimulator(chainID, vr.hdrExt.ChaincodeId) {
 		if txsim, err = e.s.GetTxSimulator(chainID, txid); err != nil {
+			log =  err.Error()
+			opentrace.CreateSpan(ctx,funcName,in,tag,log,txid)
 			return &pb.ProposalResponse{Response: &pb.Response{Status: 500, Message: err.Error()}}, nil
 		}
 
@@ -477,6 +494,8 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 		defer txsim.Done()
 
 		if historyQueryExecutor, err = e.s.GetHistoryQueryExecutor(chainID); err != nil {
+			log =  err.Error()
+			opentrace.CreateSpan(ctx,funcName,in,tag,log,txid)
 			return &pb.ProposalResponse{Response: &pb.Response{Status: 500, Message: err.Error()}}, nil
 		}
 	}
@@ -499,6 +518,8 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 	// 1 -- simulate
 	cd, res, simulationResult, ccevent, err := e.SimulateProposal(txParams, hdrExt.ChaincodeId)
 	if err != nil {
+		log =  err.Error()
+		opentrace.CreateSpan(ctx,funcName,in,tag,log,txid)
 		return &pb.ProposalResponse{Response: &pb.Response{Status: 500, Message: err.Error()}}, nil
 	}
 	if res != nil {
@@ -513,6 +534,8 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 			}
 			pResp, err := putils.CreateProposalResponseFailure(prop.Header, prop.Payload, res, simulationResult, cceventBytes, hdrExt.ChaincodeId, hdrExt.PayloadVisibility)
 			if err != nil {
+				log =  err.Error()
+				opentrace.CreateSpan(ctx,funcName,in,tag,log,txid)
 				return &pb.ProposalResponse{Response: &pb.Response{Status: 500, Message: err.Error()}}, nil
 			}
 
@@ -548,6 +571,10 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 			meterLabels = append(meterLabels, "chaincodeerror", strconv.FormatBool(true))
 			e.Metrics.EndorsementsFailed.With(meterLabels...).Add(1)
 			endorserLogger.Debugf("[%s][%s] endorseProposal() resulted in chaincode %s error for txid: %s", chainID, shorttxid(txid), hdrExt.ChaincodeId, txid)
+			log ="endorseProposal() resulted in chaincode "
+			var chaincodeId = hdrExt.ChaincodeId.String()
+			log+=chaincodeId
+			opentrace.CreateSpan(ctx,funcName,in,tag,log,txid)
 			return pResp, nil
 		}
 	}
@@ -560,6 +587,15 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 	// total failed proposals = ProposalsReceived-SuccessfulProposals
 	e.Metrics.SuccessfulProposals.Add(1)
 	success = true
+
+	jsonBytes2, err := json.Marshal(pResp)
+	if err != nil {
+		endorserLogger.Debugf("span in fail to become json ")
+	}else {
+		 log = string(jsonBytes2)
+	}
+	endorserLogger.Debugf("It's going to CreateSpan!!!")
+	opentrace.CreateSpan(ctx,funcName,in,tag,log,txid)
 
 	return pResp, nil
 }

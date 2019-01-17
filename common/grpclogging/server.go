@@ -16,6 +16,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
+	opentracing "github.com/opentracing/opentracing-go"
+	"google.golang.org/grpc/metadata"
+	"github.com/opentracing/opentracing-go/ext"
+	openlog "github.com/opentracing/opentracing-go/log"
 )
 
 // Leveler returns a zap level to use when logging from a grpc interceptor.
@@ -102,6 +106,70 @@ func UnaryServerInterceptor(logger *zap.Logger, opts ...Option) grpc.UnaryServer
 			)
 		}
 
+		return resp, err
+	}
+}
+
+//MDReaderWriter metadata Reader and Writer
+type MDReaderWriter struct {
+	metadata.MD
+}
+
+// Levelers will be required and should be provided with the full method info with tarcer
+
+func UnaryServerInterceptorWithTracer(tracer opentracing.Tracer,logger *zap.Logger, opts ...Option) grpc.UnaryServerInterceptor {
+	o := applyOptions(opts...)
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		logger := logger
+		startTime := time.Now()
+
+		fields := getFields(ctx, info.FullMethod)
+		logger = logger.With(fields...)
+		ctx = WithFields(ctx, fields)
+
+		payloadLogger := logger.Named("payload")
+		payloadLevel := o.PayloadLevel(ctx, info.FullMethod)
+		if ce := payloadLogger.Check(payloadLevel, "received unary request"); ce != nil {
+			ce.Write(ProtoMessage("message", req))
+		}
+
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			md = metadata.New(nil)
+		}
+
+		spanContext, err := tracer.Extract(opentracing.TextMap, MDReaderWriter{md})
+		if err != nil && err != opentracing.ErrSpanContextNotFound {
+			//grpclog.Errorf("extract from metadata err: %v", err)
+		} else {
+			span := tracer.StartSpan(
+				info.FullMethod,
+				ext.RPCServerOption(spanContext),
+				opentracing.Tag{Key: string(ext.Component), Value: "gRPC"},
+				ext.SpanKindRPCServer,
+			)
+			span.LogFields(
+				openlog.Object("输入", logger),
+			)
+			defer span.Finish()
+
+			ctx = opentracing.ContextWithSpan(ctx, span)
+		}
+
+		resp, err := handler(ctx, req)
+
+		if ce := payloadLogger.Check(payloadLevel, "sending unary response"); ce != nil && err == nil {
+			ce.Write(ProtoMessage("message", resp))
+		}
+
+		if ce := logger.Check(o.Level(ctx, info.FullMethod), "unary call completed"); ce != nil {
+			ce.Write(
+				Error(err),
+				zap.Stringer("grpc.code", grpc.Code(err)),
+				zap.Duration("grpc.call_duration", time.Since(startTime)),
+			)
+		}
 		return resp, err
 	}
 }

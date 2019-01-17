@@ -88,6 +88,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
+	//提供opentracing
+	"github.com/hyperledger/fabric/core/comm/opentrace"
 )
 
 const (
@@ -216,10 +218,12 @@ func serve(args []string) error {
 	throttle := comm.NewThrottle(grpcMaxConcurrency)
 	serverConfig.Logger = flogging.MustGetLogger("core.comm").With("server", "PeerServer")
 	serverConfig.MetricsProvider = metricsProvider
+
+	tracer, _, err :=  opentrace.NewJaegerTracer(listenAddr,"192.168.1.129:6831")
 	serverConfig.UnaryInterceptors = append(
 		serverConfig.UnaryInterceptors,
 		grpcmetrics.UnaryServerInterceptor(grpcmetrics.NewUnaryMetrics(metricsProvider)),
-		grpclogging.UnaryServerInterceptor(flogging.MustGetLogger("comm.grpc.server").Zap()),
+		grpclogging.UnaryServerInterceptorWithTracer(tracer,flogging.MustGetLogger("comm.grpc.server").Zap()),
 		throttle.UnaryServerIntercptor,
 	)
 	serverConfig.StreamInterceptors = append(

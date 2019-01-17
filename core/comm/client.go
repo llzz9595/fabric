@@ -11,11 +11,18 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"time"
+	"os"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/hyperledger/fabric/core/comm/opentrace"
+	//提供opentracing
+	opentracing "github.com/hyperledger/fabric/core/comm/opentrace"
+	"github.com/spf13/viper"
+	"google.golang.org/grpc/grpclog"
 )
 
 type GRPCClient struct {
@@ -55,8 +62,21 @@ func NewGRPCClient(config ClientConfig) (*GRPCClient, error) {
 			Timeout: DefaultKeepaliveOptions.ClientTimeout}
 	}
 	kap.PermitWithoutStream = true
+	//添加opentrace
+	tracehost := viper.GetString("opentracing.address")
+	if tracehost == "" {
+		tracehost = "192.168.1.129:6831"
+	}
+	var tracerName = "GRPC客户端"+os.Getenv("HOSTNAME")
+	tracer, _, err := opentrace.NewJaegerTracer(tracerName, tracehost)
+	if err != nil {
+		grpclog.Errorf("new tracer err %v , continue", err)
+	}
 	// set keepalive
 	client.dialOpts = append(client.dialOpts, grpc.WithKeepaliveParams(kap))
+	if tracer != nil {
+		client.dialOpts = append(client.dialOpts, grpc.WithUnaryInterceptor(opentracing.ClientInterceptor(tracer)))
+	}
 	// Unless asynchronous connect is set, make connection establishment blocking.
 	if !config.AsyncConnect {
 		client.dialOpts = append(client.dialOpts, grpc.WithBlock())

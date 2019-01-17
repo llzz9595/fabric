@@ -14,9 +14,14 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"os"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware"
 	"google.golang.org/grpc"
+	//提供opentracing
+	"github.com/hyperledger/fabric/core/comm/opentrace"
+	"google.golang.org/grpc/grpclog"
+	"github.com/spf13/viper"
 )
 
 type GRPCServer struct {
@@ -124,7 +129,6 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 	}
 	// set max send and recv msg sizes
 	serverOpts = append(serverOpts, grpc.MaxSendMsgSize(MaxSendMsgSize))
-	serverOpts = append(serverOpts, grpc.MaxRecvMsgSize(MaxRecvMsgSize))
 	// set the keepalive options
 	serverOpts = append(serverOpts, ServerKeepaliveOptions(serverConfig.KaOpts)...)
 	// set connection timeout
@@ -134,6 +138,24 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 	serverOpts = append(
 		serverOpts,
 		grpc.ConnectionTimeout(serverConfig.ConnectionTimeout))
+	//添加opentrace
+	tracehost := viper.GetString("opentracing.address")
+	if tracehost == ""{
+		tracehost = "192.168.1.129:6831"
+	}
+	var tracerName = os.Getenv("HOSTNAME")+listener.Addr().String()
+	if viper.GetString("peer.id") != "" {
+	    tracerName = tracerName +"-"+viper.GetString("peer.id")
+	}
+	
+    tracer, _, err :=  opentrace.NewJaegerTracer(tracerName,tracehost)
+    if err != nil {
+		grpclog.Errorf("new tracer err %v , continue", err)
+	}
+	if tracer != nil {
+		serverConfig.UnaryInterceptors = append(serverConfig.UnaryInterceptors, opentrace.ServerInterceptor(tracer))
+	}
+	
 	// set the interceptors
 	if len(serverConfig.StreamInterceptors) > 0 {
 		serverOpts = append(
